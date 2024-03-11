@@ -1,0 +1,1236 @@
+Program.Sub.Preflight.Start
+Program.External.Include.Library("ORDUPL.lib")
+Program.External.Include.Library("6021.lib")
+V.Global.sLocalPath.Declare(String)
+V.Global.fDisc.Declare(Float)
+V.Global.fShipping.Declare(Float)
+V.Global.sPartRev.Declare(String)
+V.Global.sPartDesc.Declare(String)
+V.Global.fQty_Order.Declare(Float)
+V.Global.sNewPartList.Declare(String)
+V.Global.sNewRouterList.Declare(String)
+V.Global.sRouterList.Declare(String)
+V.Global.sNewOrderList.Declare(String)
+V.Global.dLog.Declare(Date)
+V.Global.sOrderNum.Declare(String)
+V.Global.sOrderExtraText.Declare(String)
+V.Global.sPO.Declare(String)
+V.Global.iLine.Declare(Long)
+V.Global.sMessage.Declare(String)
+V.Global.sCurrentFile.Declare(String)
+Program.Sub.Preflight.End
+
+Program.Sub.ListDir.Start
+f.Intrinsic.Control.Try
+
+V.Local.sDirList.Declare(String)
+V.Local.sLocalFile.Declare(String)
+V.Local.sPath.Declare(String)
+
+'make sure we are not doing anything for . or .. from the returned file names
+F.Intrinsic.Control.If(V.Args.FileName,=,".","OR",V.Args.FileName,=,"..")
+	F.Intrinsic.Control.ExitSub
+F.Intrinsic.Control.EndIf
+
+'downloads the files from the server.
+'F.Intrinsic.String.Build("{0}\{1}",V.Global.sLocalPath,V.Args.FileName, V.Local.sLocalFile)
+F.Intrinsic.String.Build("{0}\CUSTOM\4325\{1}\Upload", V.Caller.GlobalDir, V.Caller.CompanyCode, V.Local.sPath)
+'F.Intrinsic.Control.CallSub(CheckDir, "Path", V.Local.sPath)
+F.Intrinsic.String.Build("{0}\{1}", V.Local.sPath, V.Args.FileName, V.Local.sLocalFile)
+
+F.Communication.FTP.SetProperty("LocalFile",V.Local.sLocalFile)
+F.Communication.FTP.SetProperty("RemoteFile",V.Args.FileName)
+F.Communication.FTP.SetProperty("TransferMode",2)
+F.Communication.FTP.SetProperty("Overwrite", true)
+F.Communication.FTP.Download
+
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Unload,"CurSub",v.Ambient.CurrentSubroutine,"ErrNum",v.Ambient.ErrorNumber,"ErrDesc",v.Ambient.ErrorDescription)
+f.Intrinsic.Control.EndTry
+Program.Sub.ListDir.End
+
+Program.Sub.Main.Start
+f.Intrinsic.Control.Try
+
+v.Local.sFilePath.Declare(String)
+v.Local.bExist.Declare(Boolean)
+V.Local.bDirExist.Declare(Boolean)
+v.Local.iUsrId.Declare(Long)
+v.Local.sSender.Declare(String)
+v.Local.sTemp.Declare(String)
+v.Local.sTemp1.Declare(String)
+v.Local.sRecipient.Declare(String)
+v.Local.sDirectoryPath.Declare(String)
+v.Local.sFileList.Declare(String)
+v.Local.iFileCounter.Declare(Long)
+v.Local.sRemoteFilePath.Declare(String)
+v.Local.sTempFilePath.Declare(String)
+v.Local.sFileToBeDelete.Declare(String)
+V.Local.sPO.Declare(String)
+v.Local.sFTPInfo.Declare(String)
+V.Local.dNow.Declare(Date)
+V.Local.sSQL.Declare(String)
+V.Local.sLines.Declare(String)
+v.Local.sLineString.Declare(String)
+V.Local.sExtra.Declare(String)
+V.Local.sDesc.Declare(String)
+v.Local.sFilter.Declare(String)
+V.Local.iCnt.Declare(Long)
+V.Local.sCustomDir.Declare(String)
+V.Local.sImportDir.Declare(String)
+V.Local.i.Declare(Long)
+V.Local.iOrder.Declare(Long)
+V.Local.iLine.Declare(Long)
+V.Local.iRouter.Declare(Long,0)
+'V.Local.sMessage.Declare(String)
+V.Local.sPL.Declare(String)
+V.Local.sPart.Declare(String)
+V.Local.iLineTemp.Declare(Long)
+V.Local.iID.Declare(Long)
+V.Local.iFileTemp.Declare(Long)
+V.Local.iFileMaxTemp.Declare(Long)
+V.Local.sPath.Declare(String)
+V.Local.sError.Declare(String)
+V.Local.sFile.Declare(String)
+V.Local.sText.Declare(String)
+
+F.Intrinsic.UI.InvokeWaitDialog("Checking required files...", "JSON Web Order Upload")
+
+'Create dictionary from external file in Plugins\GAB\GAS\
+F.Data.Dictionary.Create("dictCustomers")
+F.Data.Dictionary.SetDefaultReturn("dictCustomers","***NORETURN***")
+F.Intrinsic.String.Build("{0}\{1}",V.Caller.GASDir,"GCG_4325_Website_Customer.txt",V.Local.sTemp)
+F.Intrinsic.File.Exists(V.Local.sTemp,V.Local.bDirExist)
+F.Intrinsic.Control.If(V.Local.bDirExist)
+	F.Intrinsic.File.File2String(V.Local.sTemp,V.Local.sTemp)
+	F.Intrinsic.String.Split(V.Local.sTemp,V.Ambient.NewLine,V.Local.sTemp)
+	F.Intrinsic.Control.For(V.Local.iCnt,1,V.Local.sTemp.UBound,1)
+		F.Intrinsic.String.Split(V.Local.sTemp(V.Local.iCnt),"*!*",V.Local.sTemp1)
+		F.Intrinsic.Control.If(V.Dictionary.dictCustomers![V.Local.sTemp1(0)].IsNoReturn)
+			F.Data.Dictionary.AddItem("dictCustomers",V.Local.sTemp1(0),V.Local.sTemp1(2))
+		F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.Next(V.Local.iCnt)
+	V.Local.sTemp.Redim(0,0)
+F.Intrinsic.Control.EndIf
+
+'We need to create the Web Order folders in case they don't exist
+F.Intrinsic.String.Build("{0}\GSSPARAM{1}.txt",V.Caller.FilesDir,V.Caller.CompanyCode,V.Local.sTemp)
+F.Intrinsic.File.DirExists(V.Global.sLocalPath,V.Local.bDirExist)
+F.Intrinsic.Control.If(V.Local.bDirExist)
+	F.Intrinsic.File.File2String(V.Local.sTemp,V.Local.sTemp)
+	F.Intrinsic.String.Split(V.Local.sTemp,V.Ambient.NewLine,V.Local.sTemp)
+	F.Intrinsic.Control.For(V.Local.iCnt,0,V.Local.sTemp.UBound,1)
+		F.Intrinsic.String.Split(V.Local.sTemp(V.Local.iCnt),"=",V.Local.sTemp1)
+		F.Intrinsic.Control.If(V.Local.sTemp1(0).Trim,=,"EMAIL FROM ADDRESS")
+			F.Intrinsic.Control.ExitFor(V.Local.iCnt)
+		F.Intrinsic.Control.ElseIf(V.Local.sTemp1(0).Trim,=,"WEB ORDER DIRECTORY")
+			V.Local.sImportDir.Set(V.Local.sTemp1(1).Trim)
+		F.Intrinsic.Control.EndIf
+		F.Intrinsic.File.DirExists(V.Local.sTemp1(1).Trim,V.Local.bDirExist)
+		F.Intrinsic.Control.If(V.Local.bDirExist.Not)
+			F.Intrinsic.File.CreateDir(V.Local.sTemp1(1).Trim)
+		F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.Next(V.Local.iCnt)
+	V.Local.sTemp.Redim(0,0)
+F.Intrinsic.Control.EndIf
+
+''Create folder for storing upload files
+'F.Intrinsic.String.Build("{0}\{1}",V.Caller.GlobalDir,"CUSTOM\4325",V.Local.sCustomDir)
+'F.Intrinsic.File.DirExists(V.Local.sCustomDir,V.Local.bDirExist)
+'F.Intrinsic.Control.If(V.Local.bExist.Not)
+'	F.Intrinsic.File.CreateDir(V.Local.sCustomDir)
+'F.Intrinsic.Control.EndIf
+
+Function.ODBC.Connection!con.OpenConnection(V.Ambient.PDSN,V.Ambient.PUser,V.Ambient.PPass)
+
+''FTP site testing
+'F.Intrinsic.String.Build("{0}\{1}",V.System.Temp,"Json",V.Global.sLocalPath)
+'F.Intrinsic.File.DirExists(V.Global.sLocalPath,V.Local.bDirExist)
+'F.Intrinsic.Control.If(V.Local.bDirExist,=,False)
+'	F.Intrinsic.File.CreateDir(V.Global.sLocalPath)
+'F.Intrinsic.Control.EndIf
+
+f.Intrinsic.String.Build("{0}\GCG_4325_FTPConfig.dat",v.Caller.FilesDir,v.Local.sFTPInfo)
+f.Intrinsic.File.Exists(v.Local.sFTPInfo,v.Local.bExist)
+f.Intrinsic.Control.If(v.Local.bExist)
+	'The file exists so we need to get the info
+	f.Intrinsic.File.File2String(v.Local.sFTPInfo,v.Local.sFTPInfo)
+	'split the info on new line
+	f.Intrinsic.String.Split(v.Local.sFTPInfo,v.Ambient.NewLine,v.Local.sFTPInfo)
+	f.Intrinsic.Control.If(v.Local.sFTPInfo.UBound,>=,3)
+		'we have enough lines so add them to the fields
+		F.Communication.FTP.SetProperty("User",v.Local.sFTPInfo(0).Trim)
+		F.Communication.FTP.SetProperty("Password",v.Local.sFTPInfo(1).Trim)
+		F.Communication.FTP.SetProperty("remoteHost",v.Local.sFTPInfo(2).Trim)
+		F.Communication.FTP.SetProperty("remotePort",v.Local.sFTPInfo(3).Trim)
+	f.Intrinsic.Control.Else
+		'We don't have enough lines so error
+		f.Intrinsic.UI.Msgbox("FTP Config file does not have all of the information. User, Password, Host, and Port on their own line.","Warning")
+		f.Intrinsic.Control.End
+
+	f.Intrinsic.Control.EndIf
+	
+f.Intrinsic.Control.Else
+	'The file doesn't exist so let them know
+	f.Intrinsic.UI.Msgbox("FTP Config file does not exist in Global\Files\GCG_4325_FTPConfig.dat","Warning")
+	f.Intrinsic.Control.End
+
+f.Intrinsic.Control.EndIf
+
+'check directory
+F.Intrinsic.String.Build("{0}\CUSTOM\4325\{1}\Upload\", V.Caller.GlobalDir, V.Caller.CompanyCode, V.Local.sDirectoryPath)
+F.Intrinsic.Control.CallSub(CheckDir, "Path", V.Local.sDirectoryPath)
+
+F.Intrinsic.UI.ChangeWaitStatus("Downloading files...")
+
+'To login to your FTP server:
+F.Communication.FTP.Logon
+
+'To check to see if you are actually connected after attempting to logon:
+F.Communication.FTP.ReadProperty("connected",V.Local.bExist)
+F.Intrinsic.Control.If(V.Local.bExist,=,True)
+	'We are connected so we need to get List Directory
+	'We need to add the event handler because when we try to get the list directory it will return each file individually within the event sub.
+	F.Intrinsic.Control.AddEventHandler("FTPDirList","Listdir")
+	F.Communication.FTP.SetProperty("RemotePath","/Json")
+	'Calling list directory to get file list from FTP
+	F.Communication.FTP.ListDirectoryLong
+
+F.Intrinsic.Control.Else
+	'We did not connect to the FTP server 
+	f.Intrinsic.UI.Msgbox("FTP Connection Failed. Make sure that User, Password, Host, and Port are all correct and on their own line in Global\Files\GCG_4325_FTPConfig.dat","Warning")
+	f.Intrinsic.Control.End
+
+F.Intrinsic.Control.EndIf
+
+'system temp\JSON\
+'F.Intrinsic.String.Build("{0}\",V.Global.sLocalPath,V.Local.sDirectoryPath)
+'Sleeping to make sure all of the Events are done firing.
+F.Intrinsic.UI.Sleep(10)
+
+'Getting all of the files we just downloaded
+'F.Intrinsic.String.Build("{0}\CUSTOM\4325\{1}\Upload\", V.Caller.FilesDir, V.Caller.CompanyCode, V.Local.sDirectoryPath)
+F.Intrinsic.File.GetFileList(V.Local.sDirectoryPath,V.Local.sFileList)
+'Splitting to make our loop
+F.Intrinsic.String.Split(V.Local.sFileList,":",V.Local.sFileList)
+
+'Iterate through the file list
+F.Intrinsic.Control.If(V.Local.sFileList(0).Trim, =, "")
+	'no files to process
+	F.Intrinsic.UI.ChangeWaitStatus("No files to process. Exiting...")
+	F.Intrinsic.UI.Sleep(5)
+	F.Intrinsic.Control.End
+F.Intrinsic.Control.EndIf
+
+f.Intrinsic.Control.For(v.Local.iFileCounter,0,v.Local.sFileList.UBound,1)
+	F.Intrinsic.Math.Add(V.Local.iFileCounter, 1, V.Local.iFileTemp)
+	F.Intrinsic.Math.Add(V.Local.sFileList.UBound, 1, V.Local.iFileMaxTemp)
+	F.Intrinsic.String.Build("Uploading file {0} of {1}", V.Local.iFileTemp, V.Local.iFileMaxTemp, V.Global.sMessage)
+	F.Intrinsic.UI.ChangeWaitStatus(V.Global.sMessage)
+
+	F.Intrinsic.Control.If(v.DataTable.Text.Exists)
+		F.Data.DataTable.Close("Text")
+	F.Intrinsic.Control.EndIf
+
+	F.Data.DataTable.Create("Text",True)
+	F.Data.DataTable.AddColumn("Text","PO","String")
+	F.Data.DataTable.AddColumn("Text","Line","String")
+	F.Data.DataTable.AddColumn("Text","Text","String")
+	F.Data.DataTable.AddColumn("Text","Rtr","String")
+	F.Data.DataTable.AddColumn("Text","Doc","String")
+	
+	'Build string for the next file to read
+	F.Intrinsic.String.Build("{0}\{1}",V.Local.sDirectoryPath,V.Local.sFileList(V.Local.iFileCounter),V.Local.sTempFilePath)
+	V.Global.sCurrentFile.Set(V.Local.sTempFilePath)
+	
+	'Parse the Json file
+	F.Communication.JSON.ParseFile(V.Local.sTempFilePath)
+	'Start reading the header info. which then goes into the Router and Lines info.
+	f.Intrinsic.Control.CallSub(order_head)
+	
+	'Check to see if we got an error. We get an error from Customer not being valid.
+	f.Intrinsic.Variable.ArgExists("Error",v.Local.bExist)
+	'if arg doesn't exist we don't have an error
+	f.Intrinsic.Control.If(v.Local.bExist,=,False)
+		
+		'Log time before running through algorithm
+		V.Global.dLog.Set(V.Ambient.Now)
+		
+		'upload sales orders
+		F.Intrinsic.Control.CallSub(ORDUPLSync)
+		F.Data.DataTable.DeleteRow("ORDUPL")
+		F.Data.DataTable.AcceptChanges("ORDUPL")
+		F.Data.DataTable.DeleteRow("ORDUPLLines")
+		F.Data.DataTable.AcceptChanges("ORDUPLLines")
+		F.Data.DataTable.DeleteRow("ORDUPLExtra")
+		F.Data.DataTable.AcceptChanges("ORDUPLExtra")
+		
+		'Sales Order Upload from Lib file using the Web Importer
+		F.Intrinsic.String.Build("SELECT DISTINCT(Order_No) AS Order_No FROM V_Order_Header WHERE Last_Chg_Pgm = 'ORDUP3' AND CAST(CONCAT(CONVERT(Date_Last_CHG, SQL_CHAR), CONCAT(' ',CONVERT(Time_Last_Chg, SQL_CHAR))) AS DATETIME) > '{0} {1}:{2}:{3}.000' order by ORDER_NO",V.Global.dLog.PervasiveDate,V.Global.dLog.FormatHH,V.Global.dLog.FormatNN,V.Global.dLog.FormatSS,V.Local.sSQL)
+		F.ODBC.Connection!con.ExecuteAndReturn(V.Local.sSQL,V.Global.sNewOrderList)
+		
+		F.Intrinsic.Control.If(V.Ambient.ExecuteAndReturnEOF)
+			'upload failed, get details
+			F.Intrinsic.String.Build("{0}\ORDUP{1}.ERR", V.Caller.FilesDir, V.Caller.CompanyCode, V.Local.sPath)
+			F.Intrinsic.File.Exists(V.Local.sPath, V.Local.bExists)
+			F.Intrinsic.Control.If(V.Local.bExists)
+				F.Intrinsic.File.File2String(V.Local.sPath, V.Local.sFile)
+				F.Intrinsic.String.Split(V.Local.sFile, "ERROR:", V.Local.sFile)
+				V.Local.sError.Set(V.Local.sFile(V.Local.sFile.UBound))
+				F.Intrinsic.String.RegExReplace(V.Local.sError, " {2,}", " ", True, True, V.Local.sError)
+				F.Intrinsic.String.Replace(V.Local.sError, "|", " ", V.Local.sError)
+				F.Intrinsic.String.Build("Order upload failed with error message:{0}{1}{0}Order was unable to be rebuilt.", V.Ambient.NewLine, V.Local.sError, V.Local.sError)
+				F.Intrinsic.UI.MsgBox(V.Local.sError)
+			F.Intrinsic.Control.Else
+				F.Intrinsic.UI.Msgbox("Order was unable to be rebuilt.")
+			F.Intrinsic.Control.EndIf
+			F.Intrinsic.Control.End
+		F.Intrinsic.Control.EndIf
+		
+		'Use Order list to add extra text to lines
+		F.Intrinsic.Math.Sub(V.Global.sOrderExtraText.Length,3,V.Local.i)
+		F.Intrinsic.String.Right(V.Global.sOrderExtraText,V.Local.i,V.Global.sOrderExtraText)
+		F.Intrinsic.String.Split(V.Global.sOrderExtraText,"#$#",V.Global.sOrderExtraText)
+		F.Intrinsic.String.Split(V.Global.sNewOrderList,"#$#",V.Global.sNewOrderList)
+		F.Data.DataView.Create("Text","dv",22)
+		F.Intrinsic.Control.For(V.Local.iOrder,0,V.Global.sNewOrderList.UBound,1)
+
+			F.Intrinsic.String.Build("select CUSTOMER_PO from V_ORDER_HEADER where ORDER_NO = '{0}';",V.Global.sNewOrderList(V.Local.iOrder),V.Local.sSQL)
+			F.ODBC.Connection!con.ExecuteAndReturn(V.Local.sSQL,V.Local.sPO)
+			F.Intrinsic.String.Build("select left(RECORD_NO, 3) from V_ORDER_LINES where ORDER_NO = '{0}' and RECORD_NO <> '8000';",V.Global.sNewOrderList(V.Local.iOrder),V.Local.sSQL)
+			F.ODBC.Connection!con.ExecuteAndReturn(V.Local.sSQL,V.Local.sLines)
+			F.Intrinsic.String.Split(V.Local.sLines,"#$#",V.Local.sLines)
+			F.Intrinsic.Control.For(V.Local.iLine,0,V.Local.sLines.UBound,1)
+				'set line extra text
+				
+				V.Local.sLineString.Set(V.Local.sLines(V.Local.iLine).Long)
+				F.Intrinsic.String.Build("PO = '{0}' and Line = '{1}'",V.Local.sPO.Trim,V.Local.sLineString,V.Local.sFilter)
+				F.Data.DataView.SetFilter("Text","dv",V.Local.sFilter)
+				F.Intrinsic.Control.If(V.DataView.Text!dv.RowCount, >, 0)
+					V.Local.sText.Set(V.Dataview.Text!dv(0).Text!FieldValTrim)
+					F.Intrinsic.String.Build("insert into ORDER_LN_TEXT (ORDER_NUM, ORDER_LINE, ORDER_TYPE, TEXT) values ('{0}', '{1}0', 1, '{2}');",V.Global.sNewOrderList(V.Local.iOrder),V.Local.sLines(V.Local.iLine), V.Local.sText.PSQLFriendly, V.Local.sSQL)
+					F.ODBC.Connection!con.Execute(V.Local.sSQL)
+					
+					'add document control link for image file
+					'F.Intrinsic.Math.Add(V.Local.sLineString, 1, V.Local.iLineTemp)
+					V.Local.iLineTemp.Set(V.Local.sLineString)
+					F.Intrinsic.String.Build("{0}-{1}", V.Local.sPO.Trim, V.Local.iLineTemp, V.Local.sPart)
+					F.Global.DocumentControl.CreateReference(V.Local.sPart, 30, V.Local.iID)
+					F.Global.DocumentControl.AddDocument(V.Local.iID, V.DataView.Text!dv(0).Doc!FieldValTrim, "Image File", -1, "HTTP")
+				F.Intrinsic.Control.EndIf
+				
+			F.Intrinsic.Control.Next(V.Local.iLine)
+			V.Local.sLines.Redim(0,0)
+		F.Intrinsic.Control.Next(V.Local.iOrder)
+		F.Intrinsic.String.Join(V.Global.sNewOrderList,"*!*",V.Global.sNewOrderList)
+		V.Global.sNewOrderList.RedimPreserve(0,0)
+		
+		F.Intrinsic.String.Replace(V.Global.sNewOrderList,"*!*",V.Ambient.NewLine,V.Global.sNewOrderList)
+		F.Intrinsic.Control.If(V.Global.sNewPartList.Length,>,0)
+			'checking to see if parts were created
+			F.Intrinsic.Math.Sub(V.Global.sNewPartList.Length,3,V.Local.i)
+			F.Intrinsic.String.Right(V.Global.sNewPartList,V.Local.i,V.Global.sNewPartList)
+			F.Intrinsic.String.Replace(V.Global.sNewPartList,"*!*",V.Ambient.NewLine,V.Global.sNewPartList)
+		F.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.If(V.Global.sNewRouterList.Length,>,0)
+			'checking to see if routers were created
+			F.Intrinsic.Math.Sub(V.Global.sNewRouterList.Length,3,V.Local.i)
+			F.Intrinsic.String.Right(V.Global.sNewRouterList,V.Local.i,V.Global.sNewRouterList)
+			F.Intrinsic.String.Replace(V.Global.sNewRouterList,"*!*",V.Ambient.NewLine,V.Global.sNewRouterList)
+		F.Intrinsic.Control.EndIf
+
+		'Move the file to Proecessed Folder because it has finished uploading
+		V.Local.sRemoteFilePath.Set("/Processed")
+
+		F.Intrinsic.String.Build("{0}/{1}{2}.bkp",V.Local.sRemoteFilePath,V.Local.sFileList(V.Local.iFileCounter),V.Ambient.Now.FormatMMDDYYYYHHNNSS,V.Local.sRemoteFilePath)		
+		F.Communication.FTP.SetProperty("LocalFile",V.Local.sTempFilePath)
+		F.Communication.FTP.SetProperty("RemoteFile",V.Local.sRemoteFilePath)
+		F.Communication.FTP.SetProperty("TransferMode",2)
+		F.Communication.FTP.SetProperty("Overwrite", true)
+		F.Communication.FTP.Upload
+		
+		F.Intrinsic.UI.ChangeWaitStatus("Sending emails...")
+		
+		'Send emails with list of orders, parts, and routers created
+		f.Global.Security.GetUserId(v.Caller.User,v.Caller.CompanyCode,v.Local.iUsrId)
+		f.Global.Security.GetFullName(v.Caller.User,v.Local.sTemp)
+		f.Global.Security.GetUserEmail(v.Caller.User,v.Local.sTemp1)
+		f.Intrinsic.String.Build("{0}*!*{1}",v.Local.sTemp1,v.Local.sTemp,v.Local.sSender)
+		v.Local.sTemp.Set("")
+		v.Local.sTemp1.Set("")
+		f.Global.Security.GetGroupEmails("JSON",v.Local.sTemp)
+		'split the emails
+		f.Intrinsic.String.Split(v.Local.sTemp,"*!*",v.Local.sTemp)
+		'put the emails back together
+		f.Intrinsic.String.Join(v.Local.sTemp,"@!@*!*",v.Local.sTemp)
+		'put *!* in the front of the string
+		f.Intrinsic.String.Build("*!*{0}",v.Local.sTemp,v.Local.sRecipient)
+		v.Local.sTemp.Redim(0,0)
+		'Filling out the message would go here if I could could get a reliable method of recording Orders that were created
+		F.Intrinsic.String.Build("Upload of export JSON file {2} was successful. The following items were created:{0}{0}Sales Order:{0}{1}",V.Ambient.NewLine,V.Global.sNewOrderList,V.Local.sFileList(V.Local.iFileCounter),V.Local.sTemp)
+		F.Intrinsic.Control.If(V.Global.sNewPartList.Length,>,0)
+			F.Intrinsic.String.Build("{0}{1}{1}Inventory Parts:{1}{2}",V.Local.sTemp,V.Ambient.NewLine,V.Global.sNewPartList,V.Local.sTemp)
+		F.Intrinsic.Control.EndIf
+		F.Intrinsic.Control.If(V.Global.sNewRouterList.Length,>,0)
+			F.Intrinsic.String.Build("{0}{1}{1}Routers:{1}{2}",V.Local.sTemp,V.Ambient.NewLine,V.Global.sNewRouterList,V.Local.sTemp)
+		F.Intrinsic.Control.EndIf
+		V.Global.sNewRouterList.Set("")
+		V.Global.sNewPartList.Set("")
+		f.Global.Messaging.QueueMessage(v.Caller.CompanyCode,v.Local.iUsrID,"GCG_4325","JSON Sales Order Import Log",v.Local.sSender,v.Local.sRecipient,v.Local.sTemp)
+		
+		V.Global.sRouterList.Redim(0,0)
+		V.Global.sNewOrderList.Redim(0,0)
+	F.intrinsic.control.Else
+		'Move the file to Error Folder because it hasn't been uploaded
+
+		V.Local.sRemoteFilePath.Set("/Error")
+
+		F.Intrinsic.String.Build("{0}/{1}{2}.bkp",V.Local.sRemoteFilePath,V.Local.sFileList(V.Local.iFileCounter),V.Ambient.Now.FormatMMDDYYYYHHNNSS,V.Local.sRemoteFilePath)
+		F.Communication.FTP.SetProperty("LocalFile",V.Local.sTempFilePath)
+		F.Communication.FTP.SetProperty("RemoteFile",V.Local.sRemoteFilePath)
+		F.Communication.FTP.SetProperty("TransferMode",2)
+		F.Communication.FTP.SetProperty("Overwrite", true)
+		F.Communication.FTP.Upload
+		
+		F.Intrinsic.String.TrimCharL(V.Global.sNewPartList,3,V.Global.sNewPartList)
+		F.Intrinsic.String.Replace(V.Global.sNewPartList,"*!*",V.Ambient.NewLine,V.Global.sNewPartList)
+		F.Intrinsic.String.TrimCharL(V.Global.sNewRouterList,3,V.Global.sNewRouterList)
+		F.Intrinsic.String.Replace(V.Global.sNewRouterList,"*!*",V.Ambient.NewLine,V.Global.sNewRouterList)
+
+		'we need to send an email with the error information and file
+		'use v.Args.Error for the error message and we need to also use v.Local.sErrorTempFilePath for the file location
+		
+		'Getting all the stuff we need for sending an email
+		f.Global.Security.GetUserId(v.Caller.User,v.Caller.CompanyCode,v.Local.iUsrId)
+		f.Global.Security.GetFullName(v.Caller.User,v.Local.sTemp)
+		f.Global.Security.GetUserEmail(v.Caller.User,v.Local.sTemp1)
+		f.Intrinsic.String.Build("{0}*!*{1}",v.Local.sTemp1,v.Local.sTemp,v.Local.sSender)
+		v.Local.sTemp.Set("")
+		v.Local.sTemp1.Set("")
+		f.Global.Security.GetGroupEmails("JSON",v.Local.sTemp)
+		'split the emails
+		f.Intrinsic.String.Split(v.Local.sTemp,"*!*",v.Local.sTemp)
+		'put the emails back together
+		f.Intrinsic.String.Join(v.Local.sTemp,"@!@*!*",v.Local.sTemp)
+		'put *!* in the front of the string
+		f.Intrinsic.String.Build("*!*{0}",v.Local.sTemp,v.Local.sRecipient)
+		v.Local.sTemp.Redim(0,0)
+		f.Intrinsic.String.Build("{0}{1}{2}{1}{1}Please fix the issue and move the file {3} back into the JSON folder to get processed again{1}{1}The following Items were created:",v.Args.Error,v.Ambient.NewLine,v.Local.sRemoteFilePath,V.Local.sFileList(V.Local.iFileCounter),v.Local.sTemp)
+		f.Global.Messaging.QueueMessage(v.Caller.CompanyCode,v.Local.iUsrID,"GCG_4325","JSON Sales Order Import Error",v.Local.sSender,v.Local.sRecipient,v.Local.sTemp)
+	F.Intrinsic.Control.EndIf
+	
+	F.Intrinsic.UI.ChangeWaitStatus("Deleting files...")
+	
+	'Deleted Processed or Error Files
+	F.Intrinsic.Control.CallSub(BackupFile, "File", V.Local.sTempFilePath)
+	F.Intrinsic.String.Build("/Json/{0}",V.Local.sFileList(V.Local.iFileCounter),V.Local.sFileToBeDelete)
+	F.Intrinsic.Control.Try
+		F.Communication.FTP.DeleteFile(V.Local.sFileToBeDelete)
+		'F.Intrinsic.File.DeleteFile(V.Local.sTempFilePath)
+	F.Intrinsic.Control.Catch
+		'this is the error when the file doesn't exist, should only
+		'happen if there's a file in the temp folder that isn't in the FTP folder
+		F.Intrinsic.Control.If(V.Ambient.ErrorNumber, !=, 112000)
+			f.Intrinsic.Control.CallSub(Unload,"CurSub",v.Ambient.CurrentSubroutine,"ErrNum",v.Ambient.ErrorNumber,"ErrDesc",v.Ambient.ErrorDescription)
+		F.Intrinsic.Control.EndIf
+	F.Intrinsic.Control.EndTry
+f.Intrinsic.Control.Next(v.Local.iFileCounter)
+
+F.Intrinsic.UI.CloseWaitDialog
+F.ODBC.Connection!con.close	
+
+f.Intrinsic.Control.End
+
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Unload,"CurSub",v.Ambient.CurrentSubroutine,"ErrNum",v.Ambient.ErrorNumber,"ErrDesc",v.Ambient.ErrorDescription)
+f.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+Program.Sub.Order_Head.Start
+f.Intrinsic.Control.Try
+
+v.Local.iCount.Declare(Long)
+v.Local.bExist.Declare(Boolean)
+V.Local.bHeadExist.Declare(Boolean)
+v.Local..BulkDeclareString(sFields,sFieldsPrice,sFieldsDiscount,sFieldsTax,sCustFields1,sCustFields2,sShippingFieldsName,sShippingFieldsPrice,sShippingFields,sTemp,sOrderField,sItemPath,sHeadPath,sCustFieldsName,sCustFieldsEmail)
+v.Local.iPos.Declare(Long)
+v.Local.iItems.Declare(Long)
+V.Local.iHead.Declare(Long,1)
+V.Local.iHeadMax.Declare(Long,0)
+V.Local.fPrice.Declare(Float)
+V.Local.fDisc.Declare(Float)
+V.Local.fTax.Declare(Float)
+V.Local.fShipping.Declare(Float)
+v.Local.sSQL.Declare(String)
+v.Local.sYear.Declare(String)
+V.Local.sMonth.Declare(String)
+V.Local.sDay.Declare(String)
+V.Local.sMessage.Declare(String)
+V.Local.sTempFilePath.Declare(String)
+V.Local.sDT.Declare(String)
+V.Local.sCustID.Declare(String)
+V.Local.sPart.Declare(String)
+V.Local.sPL.Declare(String)
+V.Local.sTemplate.Declare(String)
+V.Local.fLength.Declare(Float)
+V.Local.fWidth.Declare(Float)
+V.Local.sFrame.Declare(String)
+V.Local.sSizeField.Declare(String)
+V.Local.sSize.Declare(String)
+V.Local.sDescription.Declare(String)
+V.Local.sPOLine.Declare(String)
+V.Local.iLine.Declare(Long)
+V.Local.bInString.Declare(Boolean)
+V.Local.sSelect.Declare(String)
+V.Local.sMedium.Declare(String)
+V.Local.iOrderCounter.Declare(Long, 1)
+V.Local.dDate.Declare(Date)
+V.Local.sDateTemp.Declare(String)
+'V.Local.sMessage.Declare(String)
+
+'Order Header
+V.Local.sFields.Set("acct_no*!*order_id*!*order_date*!*order_time*!*shipping_customer_name*!*shipping_customer_email*!*shipping_address1*!*shipping_address2*!*shipping_address3*!*shipping_city*!*shipping_state*!*shipping_postcode*!*shipping_country*!*shipping_country_code*!*shipping_method*!*shipping_carrier*!*total_item_cost*!*total_shipping_cost*!*total_cost")
+V.Local.sFields.Set("attributes/order_header/order_number*!*attributes/order_header/date")
+V.Local.sFieldsPrice.Set("attributes/order_header/total")
+V.Local.sFieldsDiscount.Set("attributes/order_header/order_discount_total")
+V.Local.sFieldsTax.Set("attributes/order_header/order_tax_total")
+V.Local.sCustFieldsName.Set("attributes/order_header/customer/account_name")
+V.Local.sCustFieldsEmail.Set("attributes/order_header/customer/email")
+V.Local.sCustID.Set("attributes/order_header/website_id")
+V.Local.sShippingFields.Set("attributes/order_header/shipping/address1*!*attributes/order_header/shipping/address2*!*attributes/order_header/shipping/city*!*attributes/order_header/shipping/state*!*attributes/order_header/shipping/postal_code*!*attributes/order_header/shipping/country*!*attributes/order_header/shipping/order_shipping_method_name")
+V.Local.sShippingFieldsName.Set("attributes/order_header/shipping/customer_name")
+V.Local.sShippingFieldsPrice.Set("attributes/order_header/shipping/order_shipping_price")
+F.Intrinsic.String.Build("{1}*!*{0}*!*{3}*!*{2}*!*{4}*!*{5}",V.Local.sFields,V.Local.sCustID,V.Local.sCustFieldsEmail,V.Local.sShippingFieldsName,V.Local.sShippingFields,V.Local.sFieldsPrice,V.Local.sFields)
+F.Intrinsic.String.Split(V.Local.sFields,"*!*",V.Local.sFields)
+'Order UDT fields - 14 fields
+f.Intrinsic.String.Split("CustomerNo*!*CustomerPO*!*OrderDate*!*ShipToName*!*ContactEmail*!*ShipToAddress1*!*ShipToAddress2*!*ShipToCity*!*ShipToState*!*ShipToZip*!*ShipToCountry*!*ShipVia*!*QuotedPrice!","*!*",v.Local.sOrderField)
+'Upload DT Names - 14 fields
+F.Intrinsic.String.Split("ORDUPL*!*ORDUPL*!*ORDUPL*!*ORDUPL*!*ORDUPLExtra*!*ORDUPL*!*ORDUPL*!*ORDUPL*!*ORDUPL*!*ORDUPL*!*ORDUPL*!*ORDUPL*!*","*!*",V.Local.sDT)
+
+F.Intrinsic.String.Build("/json/data/[{0}]",V.Local.iHead,V.Local.sHeadPath)
+F.Communication.JSON.HasXPath(V.Local.sHeadPath,V.Local.bHeadExist)
+F.Intrinsic.Control.DoUntil(V.Local.bHeadExist,=,False)
+	F.Intrinsic.Math.Add(V.Local.iHead,1,V.Local.iHead)
+	F.Intrinsic.String.Build("/json/data/[{0}]",V.Local.iHead,V.Local.sHeadPath)
+	F.Communication.JSON.HasXPath(V.Local.sHeadPath,V.Local.bHeadExist)
+F.Intrinsic.Control.Loop
+F.Intrinsic.Math.Sub(v.Local.iHead,1,V.Local.iHead)
+V.Local.iHeadMax.Set(V.Local.iHead)
+
+'Loop through order header entries
+F.Intrinsic.Control.For(V.Local.iHead,1,V.Local.iHeadMax,1)
+	F.Intrinsic.String.Build("Order {0} of {1}", V.Local.iHead, V.Local.iHeadMax, V.Local.sMessage)
+	F.Intrinsic.Control.If(V.Local.iHead, =, 1)
+		F.Intrinsic.String.Build("{0}{1}{2}", V.Global.sMessage, V.Ambient.NewLine, V.Local.sMessage, V.Global.sMessage)
+	F.Intrinsic.Control.Else
+		F.Intrinsic.String.Split(V.Global.sMessage, V.Ambient.NewLine, V.Global.sMessage)
+		V.Global.sMessage(1).Set(V.Local.sMessage)
+		F.Intrinsic.String.Join(V.Global.sMessage, V.Ambient.NewLine, V.Global.sMessage)
+	F.Intrinsic.Control.EndIf
+	F.Intrinsic.UI.ChangeWaitStatus(V.Global.sMessage)
+	
+	F.Intrinsic.String.Build("/json/data/[{0}]",V.Local.iHead,V.Local.sHeadPath)
+	'Check to see if we have any lines
+	F.Data.DataTable.AddRow("ORDUPL")
+	F.Data.DataTable.AddRow("ORDUPLExtra")
+	V.Local.iItems.Set(1)
+	V.Local.iPos.Set(0)
+	'looping through the Order Header fields to fill out the DT
+	f.Intrinsic.Control.For(v.Local.iCount,0,v.Local.sFields.UBound,1)
+		f.Intrinsic.String.Build("{0}/{1}",V.Local.sHeadPath,v.Local.sFields(v.Local.iCount),v.Local.sTemp)
+		F.Communication.JSON.HasXPath(v.Local.sTemp,V.Local.bExist)
+		F.intrinsic.control.If(V.Local.bExist,=,True)
+			F.Communication.JSON.SetProperty("XPath",v.Local.sTemp)
+			F.Communication.JSON.ReadProperty("XText", V.Local.sTemp)
+			F.Intrinsic.String.Replace(V.Local.sTemp,V.Ambient.DblQuote,"",V.Local.sTemp)
+			F.Intrinsic.String.Replace(V.Local.sTemp,"\n",v.Ambient.NewLine,V.Local.sTemp)
+			F.Intrinsic.String.Replace(V.Local.sTemp,"\","",V.Local.sTemp)
+			f.Intrinsic.Control.If(v.Local.sOrderField(v.Local.iCount).Trim,<>,"")
+				F.Intrinsic.Control.If(v.Local.sOrderField(v.Local.iCount),=,"CustomerNo")
+					'use the dictionary created at the beginning of the program to get the customer number
+					F.Intrinsic.Control.If(V.Dictionary.dictCustomers![V.Local.sTemp].IsNoReturn)
+						'Customer doesn't exist so exit the file and error it
+						F.Communication.JSON.ReadProperty("XPath",V.Local.sSQL)
+						F.Intrinsic.String.Replace(V.Local.sTemp,"''","'",V.Local.sTemp)
+						f.Intrinsic.String.Build("Customer {0} in field {1} doesn't exist in {2}",v.Local.sTemp.Trim,V.Local.sSQL,"GCG_4325_Website_Customer.txt",v.Local.sSQL)
+						f.Intrinsic.Variable.AddRV("Error",v.Local.sSQL)
+						F.ODBC.con!rstCust.Close
+						f.Intrinsic.Control.ExitSub
+					F.Intrinsic.Control.Else
+						V.Local.sTemp.Set(V.Dictionary.dictCustomers![V.Local.sTemp])
+					f.Intrinsic.Control.EndIf
+				F.Intrinsic.Control.ElseIf(v.Local.sOrderField(v.Local.iCount),=,"CustomerPO")
+					'make sure customer pO is not blank
+					f.Intrinsic.Control.If(v.Local.sTemp.Trim,=,"")
+						'blank so exit the file and error it
+						F.Communication.JSON.ReadProperty("XPath",V.Local.sSQL)
+						F.Intrinsic.String.Build("Customer PO is blank in field {0}",V.Local.sSQL,V.Local.sSQL)
+						f.Intrinsic.Variable.AddRV("Error",V.Local.sSQL)
+						f.Intrinsic.Control.ExitSub
+					f.Intrinsic.Control.EndIf
+				F.Intrinsic.Control.ElseIf(V.Local.sOrderField(V.Local.iCount),=,"OrderDate")
+					F.Intrinsic.String.Left(V.Local.sTemp,4,V.Local.sYear)
+					F.Intrinsic.String.Mid(V.Local.sTemp,6,2,V.Local.sMonth)
+					F.Intrinsic.String.Mid(V.Local.sTemp,9,2,V.Local.sDay)
+					F.Intrinsic.String.Build("{0}{1}{2}",V.Local.sYear,V.Local.sMonth,V.Local.sDay,V.Local.sTemp)
+					F.Intrinsic.String.Build("{0}-{1}-{2}",V.Local.sYear,V.Local.sMonth,V.Local.sDay,V.Local.sDateTemp)
+					V.Local.dDate.Set(V.Local.sDateTemp)
+					F.Intrinsic.Date.DateAddWorkdays(V.Local.dDate, 3, V.Local.dDate)
+					F.Data.DataTable.SetValue("ORDUPL", V.Local.iPos, "OrderDueDate", V.Local.dDate.FormatYYYYMMDD)
+				F.Intrinsic.Control.ElseIf(V.Local.sOrderField(V.Local.iCount),=,"QuotedPrice!")
+					'calculate total cost of all line items
+					V.Local.fPrice.Set(V.Local.sTemp.Float)
+					'get shipping
+					F.Intrinsic.String.Build("{0}/{1}",V.Local.sHeadPath,V.Local.sShippingFieldsPrice,v.Local.sTemp)
+					F.Communication.JSON.HasXPath(v.Local.sTemp,V.Local.bExist)
+					F.Intrinsic.Control.If(V.Local.bExist)
+						F.Communication.JSON.SetProperty("XPath",V.Local.sTemp)
+						F.Communication.JSON.ReadProperty("XText",V.Local.sTemp)
+						F.Intrinsic.String.Replace(V.Local.sTemp,V.Ambient.DblQuote,"",V.Local.sTemp)
+						F.Intrinsic.String.Replace(V.Local.sTemp,"\n",v.Ambient.NewLine,V.Local.sTemp)
+						F.Intrinsic.String.Replace(V.Local.sTemp,"\","",V.Local.sTemp)
+						'freight has already been set previously, check for decimal
+						F.Intrinsic.Math.Sub(V.Local.fPrice,V.Local.sTemp.Float,V.Local.fPrice)
+						F.Intrinsic.String.Split(V.Local.sTemp,".",V.Local.sTemp)
+						F.Intrinsic.Control.If(V.Local.sTemp.UBound,=,1)
+							F.Intrinsic.String.RPad(V.Local.sTemp(1),"0",2,V.Local.sTemp(1))
+							F.Intrinsic.String.Left(V.Local.sTemp(1),2,V.Local.sTemp(1))
+							F.Intrinsic.String.LPad(V.Local.sTemp(0),"0",8,V.Local.sTemp(0))
+							F.Intrinsic.String.Right(V.Local.sTemp(0),8,V.Local.sTemp(0))
+							F.Intrinsic.String.Join(V.Local.sTemp,"",V.Local.sTemp)
+							V.Local.sTemp.RedimPreserve(0,0)
+						F.Intrinsic.Control.Else
+							F.Intrinsic.String.Build("{0}00",V.Local.sTemp,V.Local.sTemp)
+							F.Intrinsic.String.LPad(V.Local.sTemp,"0",10,V.Local.sTemp)
+							F.Intrinsic.String.Right(V.Local.sTemp,10,V.Local.sTemp)
+						F.Intrinsic.Control.EndIf
+						F.Data.DataTable.SetValue("ORDUPL",V.Local.iPos,"Freight",V.Local.sTemp)
+					F.Intrinsic.Control.EndIf
+					'get tax
+					F.Intrinsic.String.Build("{0}/{1}",V.Local.sHeadPath,V.Local.sFieldsTax,v.Local.sTemp)
+					F.Communication.JSON.HasXPath(v.Local.sTemp,V.Local.bExist)
+					F.Intrinsic.Control.If(V.Local.bExist)
+						F.Communication.JSON.SetProperty("XPath",V.Local.sTemp)
+						F.Communication.JSON.ReadProperty("XText",V.Local.sTemp)
+						F.Intrinsic.String.Replace(V.Local.sTemp,V.Ambient.DblQuote,"",V.Local.sTemp)
+						F.Intrinsic.String.Replace(V.Local.sTemp,"\n",v.Ambient.NewLine,V.Local.sTemp)
+						F.Intrinsic.String.Replace(V.Local.sTemp,"\","",V.Local.sTemp)
+						'it is better to let GS handle tax
+						F.Intrinsic.Math.Sub(V.Local.fPrice,V.Local.sTemp.Float,V.Local.fPrice)
+					F.Intrinsic.Control.EndIf
+					'get discount
+					F.Intrinsic.String.Build("{0}/{1}",V.Local.sHeadPath,V.Local.sFieldsDiscount,v.Local.sTemp)
+					F.Communication.JSON.HasXPath(v.Local.sTemp,V.Local.bExist)
+					F.Intrinsic.Control.If(V.Local.bExist)
+						F.Communication.JSON.SetProperty("XPath",V.Local.sTemp)
+						F.Communication.JSON.ReadProperty("XText",V.Local.sTemp)
+						F.Intrinsic.String.Replace(V.Local.sTemp,V.Ambient.DblQuote,"",V.Local.sTemp)
+						F.Intrinsic.String.Replace(V.Local.sTemp,"\n",v.Ambient.NewLine,V.Local.sTemp)
+						F.Intrinsic.String.Replace(V.Local.sTemp,"\","",V.Local.sTemp)
+						V.Local.fDisc.Set(V.Local.sTemp.Float)
+						F.Intrinsic.Math.Add(V.Local.fPrice,V.Local.fDisc,V.Local.fPrice)
+						'calculate order discount percent and set it to Order_Discount_Perc
+						F.Intrinsic.Math.Div(V.Local.fDisc,V.Local.fPrice,V.Local.fDisc)
+						F.Intrinsic.Math.Mult(V.Local.fDisc,100,V.Local.fDisc)
+						F.Intrinsic.String.Split(V.Local.fDisc.String,".",V.Local.sTemp)
+						F.Intrinsic.Control.If(V.Local.sTemp.UBound,=,1)
+							F.Intrinsic.String.RPad(V.Local.sTemp(1),"0",2,V.Local.sTemp(1))
+							F.Intrinsic.String.Left(V.Local.sTemp(1),2,V.Local.sTemp(1))
+							F.Intrinsic.String.LPad(V.Local.sTemp(0),"0",3,V.Local.sTemp(0))
+							F.Intrinsic.String.Right(V.Local.sTemp(0),3,V.Local.sTemp(0))
+							F.Intrinsic.String.Join(V.Local.sTemp,"",V.Local.sTemp)
+							V.Local.sTemp.RedimPreserve(0,0)
+						F.Intrinsic.Control.Else
+							F.Intrinsic.String.Build("{0}00",V.Local.sTemp,V.Local.sTemp)
+							F.Intrinsic.String.LPad(V.Local.sTemp,"0",5,V.Local.sTemp)
+							F.Intrinsic.String.Right(V.Local.sTemp,5,V.Local.sTemp)
+						F.Intrinsic.Control.EndIf
+						F.Data.DataTable.SetValue("ORDUPL",V.Local.iPos,"OrderDiscPercentage",V.Local.sTemp)
+					F.Intrinsic.Control.EndIf
+					'set calculated total to Temp
+					F.Intrinsic.String.Split(V.Local.fPrice.String,".",V.Local.sTemp)
+					F.Intrinsic.Control.If(V.Local.sTemp.UBound,=,1)
+						F.Intrinsic.String.RPad(V.Local.sTemp(1),"0",4,V.Local.sTemp(1))
+						F.Intrinsic.String.Left(V.Local.sTemp(1),2,V.Local.sTemp(1))
+						F.Intrinsic.String.LPad(V.Local.sTemp(0),"0",8,V.Local.sTemp(0))
+						F.Intrinsic.String.Right(V.Local.sTemp(0),8,V.Local.sTempFilePath(0))
+						F.Intrinsic.String.Join(V.Local.sTemp,"",V.Local.sTemp)
+						v.Local.sTemp.RedimPreserve(0,0)
+					F.Intrinsic.Control.Else
+						F.Intrinsic.String.Build("{0}0000",V.Local.sTemp,V.Local.sTemp)
+						F.Intrinsic.String.LPad(V.Local.sTemp,"0",12,V.Local.sTemp)
+						F.Intrinsic.String.Right(V.Local.sTemp,12,V.Local.sTemp)
+					F.Intrinsic.Control.EndIf
+				f.Intrinsic.Control.EndIf
+				F.Intrinsic.String.IsInString(V.Local.sOrderField(V.Local.iCount),"!",True,V.Local.bHeadExist)
+				
+				F.Intrinsic.Control.If(V.Local.bHeadExist,=,False)
+					F.Data.DataTable.SetValue(V.Local.sDT(V.Local.iCount),V.Local.iPos,V.Local.sOrderField(V.Local.iCount),V.Local.sTemp)
+				F.Intrinsic.Control.EndIf
+				
+			f.Intrinsic.Control.EndIf
+		F.intrinsic.control.EndIf
+	f.Intrinsic.Control.Next(v.Local.iCount)
+	
+	F.Intrinsic.String.Build("{0}/attributes/order_header/order_number",V.Local.sHeadPath,V.Local.sTemp)
+	F.Communication.JSON.HasXPath(V.Local.sTemp,V.Local.bExist)
+	F.Intrinsic.Control.If(V.Local.bExist)
+		F.Communication.JSON.SetProperty("XPath",V.Local.sTemp)
+		F.Communication.JSON.ReadProperty("XText",V.Local.sTemp)
+		F.Intrinsic.String.Replace(V.Local.sTemp,V.Ambient.DblQuote,"",V.Local.sTemp)
+		F.Intrinsic.String.Replace(V.Local.sTemp,"\n",v.Ambient.NewLine,V.Local.sTemp)
+		F.Intrinsic.String.Replace(V.Local.sTemp,"\","",V.Local.sTemp)
+		V.Global.sOrderNum.Set(V.Local.sTemp)
+	F.Intrinsic.Control.EndIf
+	
+	F.Intrinsic.String.Build("{0}/attributes/order_header/customer/phone1",V.Local.sHeadPath,V.Local.sItemPath)
+	F.Communication.JSON.HasXPath(V.Local.sItemPath,V.Local.bExist)
+	F.Intrinsic.Control.If(V.Local.bExist)
+		F.Communication.JSON.SetProperty("XPath", V.Local.sItemPath)
+		F.Communication.JSON.ReadProperty("XText", V.Local.sTemp)
+		F.Intrinsic.String.Replace(V.Local.sTemp,V.Ambient.DblQuote,"",V.Local.sTemp)
+		F.Intrinsic.String.Replace(V.Local.sTemp,"\n",v.Ambient.NewLine,V.Local.sTemp)
+		F.Intrinsic.String.Replace(V.Local.sTemp,"\","",V.Local.sTemp)
+		F.Data.DataTable.SetValue("ORDUPLExtra", V.Local.iPos, "ContactPhone", V.Local.sTemp)
+	F.Intrinsic.Control.EndIf
+	
+	F.Intrinsic.String.Build("{0}/attributes/order_items/[{1}]",V.Local.sHeadPath,V.Local.iItems,V.Local.sItemPath)
+	F.Communication.JSON.HasXPath(V.Local.sItemPath,V.Local.bExist)
+	
+	'Do as many times as we have lines
+	V.Global.sPO.Set(V.DataTable.ORDUPL(0).CustomerPO!FieldVal)
+	F.intrinsic.control.DoUntil(V.Local.bExist,=,false)
+		F.Data.DataTable.AddRow("ORDUPLLines", "LinePromiseDate", V.Local.dDate.FormatYYYYMMDD)	
+		
+		'now that we have filled out all of the Order Header information we need to get the Line information
+		F.Intrinsic.Control.CallSub(items,"iPos",v.Local.iPos,"sItemPath",v.Local.sItemPath)
+		
+'		F.Intrinsic.Control.If(V.Caller.CompanyCode, =, "TST")
+'			'only want this in TST for now
+'			'this sub gets the required info and call copy router
+'			F.Intrinsic.Control.CallSub(GetRouterTemplateInfo)
+'			'F.Intrinsic.Control.CallSub(CopyRouter, "Template", V.Local.sTemplate, "Part", V.Local.sPart.Trim, "Length", V.Local.fLength, "Width", V.Local.fWidth, "Description", V.Local.sDescription)
+'		F.Intrinsic.Control.EndIf
+		
+		'this sub gets the required info and call copy router
+		F.Intrinsic.Control.CallSub(GetRouterTemplateInfo)
+		
+		F.Intrinsic.Math.Add(V.Local.iPos,1,V.Local.iPos)
+		F.Intrinsic.Math.Add(v.Local.iItems,1,v.Local.iItems)
+		F.Intrinsic.String.Build("{0}/attributes/order_items/[{1}]",V.Local.sHeadPath,V.Local.iItems,V.Local.sItemPath)
+		F.Communication.JSON.HasXPath(V.Local.sItemPath,V.Local.bExist)
+	f.Intrinsic.Control.Loop
+	
+	'add divider in extra text for the next order
+	F.Intrinsic.String.Build("{0}#$#",V.Global.sOrderExtraText,V.Global.sOrderExtraText)
+	
+	'Upload the currently focused order
+	'F.Data.DataTable.SetValue("ORDUPLLines",-1,"UM","EA","PL","FC")
+	F.Data.DataTable.SetValue("ORDUPLLines",-1,"UM","EA")
+	F.Intrinsic.Control.CallSub(ORDUPLCreateFile)
+	F.Data.DataTable.AcceptChanges("ORDUPL")
+	F.Data.DataTable.AcceptChanges("ORDUPLExtra")
+	F.Data.DataTable.AcceptChanges("ORDUPLLines")
+F.Intrinsic.Control.Next(V.Local.iHead)
+
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Unload,"CurSub",v.Ambient.CurrentSubroutine,"ErrNum",v.Ambient.ErrorNumber,"ErrDesc",v.Ambient.ErrorDescription)
+f.Intrinsic.Control.EndTry
+Program.Sub.Order_Head.End
+
+Program.Sub.Items.Start
+f.Intrinsic.Control.Try
+
+v.Local.sFields.Declare(String)
+v.Local.sOrderFields.Declare(String)
+v.Local.sTemp.Declare(String)
+V.Local.sTemp2.Declare(String)
+V.Local.sTemp3.Declare(String)
+V.Local.sPart.Declare(String)
+V.Local.sRev.Declare(String)
+V.Local.sPartRev.Declare(String)
+v.Local.iCount.Declare(Long)
+V.Local.i.Declare(Long)
+v.Local.bExist.Declare(Boolean)
+v.Local.sSQL.Declare(String)
+V.Local.sDT.Declare(String)
+V.Local.sOrderPartDesc.Declare(String)
+V.Local.sProductID.Declare(String)
+V.Local.iLine.Declare(Long)
+V.Local.sMedium.Declare(String)
+V.Local.iTemp.Declare(Long)
+V.Local.sPL.Declare(String)
+V.Local.bInString.Declare(Boolean)
+V.Local.iCurrentRow.Declare(Long)
+V.Local.sFrame.Declare(String)
+
+f.Intrinsic.String.Split("item_attributes/medium_name*!*item_attributes/size*!*f_description*!*qty*!*f_price*!*item_attributes/print_files/[1]/download_url","*!*",v.Local.sFields)
+f.Intrinsic.String.Split("PartNumber*!*PartDesc*!*ExtraDescription*!*QtyOrdered*!*QuotedPrice*!*TextLine1","*!*",v.Local.sOrderFields)
+F.Intrinsic.String.Split("ORDUPLLines*!*ORDUPLLines*!*ORDUPLLines*!*ORDUPLLines*!*ORDUPLLines*!*ORDUPLLines","*!*",V.Local.sDT)
+V.Local.sProductID.Set("product_id")
+
+'find the attributes in each record
+f.Intrinsic.Control.For(v.Local.iCount,0,v.Local.sFields.UBound,1)
+	F.Intrinsic.String.Build("{0}/{1}",V.Args.sItemPath,v.Local.sFields(v.Local.iCount),v.Local.sTemp)
+	F.Communication.JSON.HasXPath(V.Local.sTemp,V.Local.bExist)
+	F.intrinsic.control.If(V.Local.bExist,=,True,"AND",V.Local.sDT(V.Local.iCount).Length,!=,0)	
+		F.Communication.JSON.SetProperty("XPath", V.Local.sTemp)
+		F.Communication.JSON.ReadProperty("XText", V.Local.sTemp)
+		F.Intrinsic.String.Replace(V.Local.sTemp,V.Ambient.DblQuote,"",V.Local.sTemp)
+		F.Intrinsic.String.Replace(V.Local.sTemp,"\n",v.Ambient.NewLine,V.Local.sTemp)
+		F.Intrinsic.String.Replace(V.Local.sTemp,"\","",V.Local.sTemp)
+		f.Intrinsic.Control.If(v.Local.sOrderFields(v.Local.iCount),<>,"","AND",V.Local.sOrderFields(V.Local.iCount),!=,"TextLine1",V.Local.sOrderFields(V.Local.iCount),!=,"ExtraDescription", V.Local.sOrderFields(V.Local.iCount), !=, "PartNumber", V.Local.sOrderFields(V.Local.iCount), !=, "PartDesc")
+			F.Data.DataTable.SetValue(V.Local.sDT(V.Local.iCount),V.Args.iPos,V.Local.sOrderFields(V.Local.iCount),V.Local.sTemp.Trim)
+		f.Intrinsic.Control.EndIf
+	F.intrinsic.control.EndIf
+	
+	f.Intrinsic.Control.If(v.Local.sOrderFields(v.Local.iCount),=,"PartNumber")
+		V.Local.sMedium.Set(V.Local.sTemp)
+		F.Intrinsic.Math.Add(V.Args.iPos, 1, V.Local.iLine)
+		F.Intrinsic.String.Build("{0}-{1}", V.Global.sPO, V.Local.iLine, V.Local.sPart)
+		F.Data.DataTable.SetValue(V.Local.sDT(V.Local.iCount),V.Args.iPos,V.Local.sOrderFields(V.Local.iCount),V.Local.sPart)
+		F.Intrinsic.String.Build("{0}*!*{1}   ",V.Global.sNewPartList,V.Local.sPart,V.Global.sNewPartList)
+		
+	f.Intrinsic.Control.ElseIf(v.Local.sOrderFields(v.Local.iCount),=,"ExtraDescription")
+		
+		F.Intrinsic.String.Replace(V.Local.sTemp,", ",V.Ambient.NewLine,V.Local.sTemp)
+		'add this info to line extra text (in main)
+		F.Intrinsic.Math.Add(V.Args.iPos, 1, V.Local.iTemp)
+		F.Data.DataTable.AddRow("Text", "PO", V.Global.sPO, "Line", V.Local.iTemp, "Text", V.Local.sTemp)
+		V.Local.iCurrentRow.Set(V.DataTable.Text.RowCount--)
+		F.Intrinsic.String.Split(V.Local.sTemp,V.Ambient.NewLine,V.Local.sTemp)
+		V.Local.sTemp.RedimPreserve(0,4)
+		'F.Data.DataTable.SetValue(V.Local.sDT(V.Local.iCount),V.Args.iPos,"UserField1",V.Local.sTemp(0).Trim)
+		'F.Data.DataTable.SetValue(V.Local.sDT(V.Local.iCount),V.Args.iPos,"UserField2",V.Local.sTemp(1).Trim)
+		'F.Data.DataTable.SetValue(V.Local.sDT(V.Local.iCount),V.Args.iPos,"UserField3",V.Local.sTemp(2).Trim)
+		'F.Data.DataTable.SetValue(V.Local.sDT(V.Local.iCount),V.Args.iPos,"UserField4",V.Local.sTemp(3).Trim)
+		'F.Data.DataTable.SetValue(V.Local.sDT(V.Local.iCount),V.Args.iPos,"UserField5",V.Local.sTemp(4).Trim)
+		'F.Data.DataTable.SetValue(V.Local.sDT(V.Local.iCount),V.Args.iPos,"UserField1",V.Local.sTemp(2).Trim)
+		F.Intrinsic.String.Join(V.Local.sTemp,",",V.Local.sTemp)
+		
+		V.Local.sTemp.RedimPreserve(0,0)
+	F.Intrinsic.Control.ElseIf(V.Local.sOrderFields(v.Local.iCount),=,"TextLine1")
+'		f.Intrinsic.String.LimitSplit(v.Local.sTemp,30,True,v.Local.sTemp)
+'		v.Local.sTemp.RedimPreserve(0,9)
+'		F.Data.DataTable.SetValue("ORDUPLLines",V.Args.iPos,"TextLine1",V.Local.sTemp(0),"TextLine2",V.Local.sTemp(1),"TextLine3",V.Local.sTemp(2),"TextLine4",V.Local.sTemp(3),"TextLine5",V.Local.sTemp(4),"TextLine6",V.Local.sTemp(5),"TextLine7",V.Local.sTemp(6),"TextLine8",V.Local.sTemp(7),"TextLine9",V.Local.sTemp(8),"TextLine10",V.Local.sTemp(9))
+'		v.Local.sTemp.Redim(0,0)
+		
+		'save image file link to datatable to be added later
+		F.Data.DataTable.SetValue("Text", V.Local.iCurrentRow, "Doc", V.Local.sTemp)
+	F.Intrinsic.Control.ElseIf(V.Local.sOrderFields(V.Local.iCount),=,"QtyOrdered")
+		
+		V.Global.fQty_Order.Set(V.Local.sTemp.Float)
+		F.Intrinsic.String.Split(V.Local.sTemp,".",V.Local.sTemp)
+		
+		F.Intrinsic.Control.If(V.Local.sTemp.UBound,=,1)
+			F.Intrinsic.String.RPad(V.Local.sTemp(1),"0",4,V.Local.sTemp(1))
+			F.Intrinsic.String.Left(V.Local.sTemp(1),4,V.Local.sTemp(1))
+			F.Intrinsic.String.LPad(V.Local.sTemp(0),"0",9,V.Local.sTemp(0))
+			F.Intrinsic.String.Right(V.Local.sTemp(0),9,V.Local.sTemp(0))
+			F.Intrinsic.String.Join(V.Local.sTemp,"",V.Local.sTemp)
+			V.Local.sTemp.RedimPreserve(0,0)
+			
+		F.Intrinsic.Control.Else
+		
+			F.Intrinsic.String.Build("{0}0000",V.Local.sTemp,V.Local.sTemp)
+			F.Intrinsic.String.LPad(V.Local.sTemp,"0",13,V.Local.sTemp)
+			F.Intrinsic.String.Right(V.Local.sTemp,13,V.Local.sTemp)
+		F.Intrinsic.Control.EndIf
+		
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Args.iPos,"QtyOrdered",V.Local.sTemp)
+		
+	F.Intrinsic.Control.ElseIf(V.Local.sOrderFields(V.Local.iCount),=,"QuotedPrice")
+		F.Intrinsic.String.Split(V.Local.sTemp,".",V.Local.sTemp)
+		
+		F.Intrinsic.Control.If(V.Local.sTemp.UBound,=,1)
+			F.Intrinsic.String.RPad(V.Local.sTemp(1),"0",6,V.Local.sTemp(1))
+			F.Intrinsic.String.Left(V.Local.sTemp(1),6,V.Local.sTemp(1))
+			F.Intrinsic.String.LPad(V.Local.sTemp(0),"0",10,V.Local.sTemp(0))
+			F.Intrinsic.String.Right(V.Local.sTemp(0),10,V.Local.sTemp(0))
+			F.Intrinsic.String.Join(V.Local.sTemp,"",V.Local.sTemp)
+			V.Local.sTemp.RedimPreserve(0,0)
+			
+		F.Intrinsic.Control.Else
+			F.Intrinsic.String.Build("{0}000000",V.Local.sTemp,V.Local.sTemp)
+			F.Intrinsic.String.LPad(V.Local.sTemp,"0",16,V.Local.sTemp)
+			F.Intrinsic.String.Right(V.Local.sTemp,16,V.Local.sTemp)
+		F.Intrinsic.Control.EndIf
+		
+		F.Data.DataTable.SetValue("ORDUPLLines",V.Args.iPos,"QuotedPrice",V.Local.sTemp)
+		
+	F.Intrinsic.Control.ElseIf(V.Local.sOrderFields(V.Local.iCount),=,"PartDesc")
+		'set u1 to size from description, description to medium
+		F.Data.DataTable.SetValue(V.Local.sDT(V.Local.iCount),V.Args.iPos,"UserField1", V.Local.sTemp)
+		'F.Data.DataTable.SetValue(V.Local.sDT(V.Local.iCount),V.Args.iPos,"PartDesc",V.Local.sMedium.Trim)
+		F.Intrinsic.String.Build("{0}, {1}", V.Local.sMedium.Trim, V.Local.sTemp.Trim, V.Local.sTemp)
+		F.Data.DataTable.SetValue(V.Local.sDT(V.Local.iCount),V.Args.iPos,"PartDesc",V.Local.sTemp.Trim)
+	f.Intrinsic.Control.EndIf
+	
+f.Intrinsic.Control.Next(v.Local.iCount)
+
+'need to set PL based on Medium
+F.Intrinsic.String.IsInString(V.Local.sMedium, "Vinyl", "True", V.Local.bInString)
+F.Intrinsic.Control.If(V.Local.bInString)
+	V.Local.sPL.Set("FV")
+F.Intrinsic.Control.EndIf
+F.Intrinsic.String.IsInString(V.Local.sMedium, "Canvas", "True", V.Local.bInString)
+F.Intrinsic.Control.If(V.Local.bInString)
+	V.Local.sPL.Set("FC")
+F.Intrinsic.Control.EndIf
+F.Intrinsic.String.IsInString(V.Local.sMedium, "Film", "True", V.Local.bInString)
+F.Intrinsic.Control.If(V.Local.bInString)
+	V.Local.sPL.Set("FM")
+F.Intrinsic.Control.EndIf
+F.Intrinsic.String.IsInString(V.Local.sMedium, "Paper", "True", V.Local.bInString)
+F.Intrinsic.Control.If(V.Local.bInString)
+	V.Local.sPL.Set("FP")
+F.Intrinsic.Control.EndIf
+F.Intrinsic.String.IsInString(V.Local.sMedium, "Aluminum", "True", V.Local.bInString)
+F.Intrinsic.Control.If(V.Local.bInString)
+	V.Local.sPL.Set("FD")
+F.Intrinsic.Control.EndIf
+F.Intrinsic.String.IsInString(V.Local.sMedium, "Metal", "True", V.Local.bInString)
+F.Intrinsic.Control.If(V.Local.bInString)
+	V.Local.sPL.Set("FD")
+F.Intrinsic.Control.EndIf
+F.Intrinsic.String.IsInString(V.Local.sMedium, "crylic", "True", V.Local.bInString)
+F.Intrinsic.Control.If(V.Local.bInString)
+	V.Local.sPL.Set("FL")
+F.Intrinsic.Control.EndIf
+F.Intrinsic.Control.If(V.Local.sPL.Trim, =, "")
+	V.Local.sPL.Set("FC")
+F.Intrinsic.Control.EndIf
+
+F.Data.DataTable.SetValue("ORDUPLLines", V.Args.iPos, "PL", V.Local.sPL)
+
+'get the frame, add it to extra description
+F.Intrinsic.String.Build("{0}/item_attributes/frame_name",V.Args.sItemPath,v.Local.sTemp)
+F.Communication.JSON.HasXPath(V.Local.sTemp,V.Local.bExist)
+F.Intrinsic.Control.If(V.Local.bExist)
+	F.Communication.JSON.SetProperty("XPath", V.Local.sTemp)
+	F.Communication.JSON.ReadProperty("XText", V.Local.sFrame)
+F.Intrinsic.Control.Else
+	V.Local.sFrame.Set("")
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.String.IsInString(V.Local.sFrame, "null", True, V.Local.bInString)
+F.Intrinsic.Control.If(V.Local.bInString)
+	V.Local.sFrame.Set("")
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.If(V.Local.sFrame.Trim, !=, "")
+	F.Intrinsic.String.Build("Frame: {0}", V.Local.sFrame, V.Local.sFrame)
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.String.Build("{0}{1}{2}", V.DataTable.Text(V.Local.iCurrentRow).Text!FieldValTrim, V.Ambient.NewLine, V.Local.sFrame.Trim, V.Local.sTemp)
+F.Data.DataTable.SetValue("Text", V.Local.iCurrentRow, "Text", V.Local.sTemp)
+
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Unload,"CurSub",v.Ambient.CurrentSubroutine,"ErrNum",v.Ambient.ErrorNumber,"ErrDesc",v.Ambient.ErrorDescription)
+f.Intrinsic.Control.EndTry
+Program.Sub.Items.End
+
+Program.Sub.Unload.Start
+v.Local.sError.Declare(String)
+
+F.Intrinsic.Control.If(V.Global.sCurrentFile.Trim, !=, "")
+	F.Intrinsic.Control.CallSub(FailFile, "File", V.Global.sCurrentFile)
+F.Intrinsic.Control.EndIf
+
+f.Intrinsic.String.Build("Project: {0}{1}{1}Subroutine: {2}{1}Error Occurred: {3} with descripiton {4}","GCG_4325_JsonMapper.g2u",v.Ambient.NewLine,v.Args.CurSub,v.Args.ErrNum,v.Args.ErrDesc,v.Local.sError)
+f.Intrinsic.UI.Msgbox(v.Local.sError,"GAB Error")
+f.Intrinsic.Control.End
+Program.Sub.Unload.End
+
+Program.Sub.CopyRouter.Start
+V.Local.sPart.Declare(String)
+V.Local.sTemplate.Declare(String)
+V.Local.fWidth.Declare(Float)
+V.Local.fLength.Declare(Float)
+V.Local.sSQL.Declare(String)
+V.Local.iCount.Declare(Long)
+V.Local.sMessage.Declare(String)
+V.Local.sRet.Declare(String)
+V.Local.sRouterDescription.Declare(String)
+V.Local.fMaterialTemp.Declare(Float)
+V.Local.sMaterial.Declare(String)
+V.Local.bInString.Declare(Boolean)
+V.Local.fLengthTemp.Declare(Float)
+V.Local.fWidthTemp.Declare(Float)
+V.Local.bCanvas.Declare(Boolean)
+V.Local.bStretcher.Declare(Boolean)
+V.Local.bFrame.Declare(Boolean)
+
+V.Local.sPart.Set(V.Args.Part)
+V.Local.sTemplate.Set(V.Args.Template)
+V.Local.fWidth.Set(V.Args.Width)
+V.Local.fLength.Set(V.Args.Length)
+
+F.Intrinsic.String.Build("{0} {1}x{2}", V.Args.Description, V.Local.fLength, V.Local.fWidth, V.Local.sRouterDescription)
+'V.Local.sRouterDescription.Set(V.Args.Description.Trim)
+
+'get template router info
+F.Intrinsic.String.Build("select RTRIM(ROUTER) as ROUTER from V_ROUTER_HEADER where ROUTER = '{0}'", V.Local.sTemplate, V.Local.sSQL)
+F.ODBC.Connection!Con.ExecuteAndReturn(V.Local.sSQL, V.Local.sRet)
+
+F.Intrinsic.Control.If(V.Ambient.ExecuteAndReturnEOF)
+	F.Intrinsic.String.Build("Error: Template router '{0}' not found. Router will not be created for part '{1}'.", V.Local.sTemplate, V.Local.sPart, V.Local.sMessage)
+	F.Intrinsic.UI.Msgbox(V.Local.sMessage)
+	F.Intrinsic.Control.ExitSub
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.String.Build("select * from V_ROUTER_LINE where ROUTER = '{0}' order by LINE_ROUTER", V.Local.sTemplate, V.Local.sSQL)
+F.Data.DataTable.CreateFromSQL("dtRLINES", "Con", V.Local.sSQL)
+
+'loop through the table we just built and add it to upload table
+F.Intrinsic.Control.For(V.Local.iCount, 0, V.DataTable.dtRLines.RowCount--, 1)
+		
+	F.Intrinsic.Control.SelectCase(V.DataTable.dtRLines(V.Local.iCount).LMO!FieldValTrim)
+		
+		F.Intrinsic.Control.Case("L")
+			F.Data.DataTable.AddRow("6021", "RouterNum", V.Local.sPart, "RouterDesc", V.Local.sRouterDescription, "Seq", V.DataTable.dtRLines(V.Local.iCount).LINE_ROUTER!FieldValTrim, "LineType", "L", "WC", V.DataTable.dtRLines(V.Local.iCount).PART_WC_OUTSIDE!FieldValTrim, "OperationCodeVend", V.DataTable.dtRLines(V.Local.iCount).OPERATION!FieldValTrim, "SetupQty", V.DataTable.dtRLines(V.Local.iCount).SET_UP!FieldValTrim, "RuntimeMatlQty", V.DataTable.dtRLines(V.Local.iCount).RUN_TIME!FieldValTrim, "RateUC", V.DataTable.dtRLines(V.Local.iCount).RATE!FieldValTrim, "UM", V.DataTable.dtRLines(V.Local.iCount).UM_INVENTORY!FieldValTrim, "PartStepDesc", V.DataTable.dtRLines(V.Local.iCount).DESC_RT_LINE!FieldValTrim, "Freq", V.DataTable.dtRLines(V.Local.iCount).FREQUENCY!FieldValTrim, "Overlap", V.DataTable.dtRLines(V.Local.iCount).OVERLAP!FieldValTrim, "WCFactor", V.DataTable.dtRLines(V.Local.iCount).WC_FACTOR!FieldValTrim, "LeadTime", V.DataTable.dtRLines(V.Local.iCount).LEAD_TIME!FieldValTrim)
+			
+		F.Intrinsic.Control.Case("C")
+			F.Data.DataTable.AddRow("6021", "RouterNum", V.Local.sPart, "RouterDesc", V.Local.sRouterDescription, "Seq", V.DataTable.dtRLines(V.Local.iCount).LINE_ROUTER!FieldValTrim, "LineType", "C", "OperationCodeVend", V.DataTable.dtRLines(V.Local.iCount).OPERATION!FieldValTrim, "PartStepDesc", V.DataTable.dtRLines(V.Local.iCount).DESC_RT_LINE!FieldValTrim, "SetupQty", "0", "RuntimeMatlQty", "0", "RateUC", "0", "Freq", "0", "WCFactor", "0", "Overlap", "0", "LeadTime", "0", "MainCommentFlag", "Y")
+		
+		F.Intrinsic.Control.Case("M")
+			'multiply materials
+			V.Local.sMaterial.Set(V.DataTable.dtRLines(V.Local.iCount).PART_WC_OUTSIDE!FieldValTrim)
+			V.Local.fMaterialTemp.Set(V.DataTable.dtRLines(V.Local.iCount).RUN_TIME!FieldValFloat)
+			
+			F.Intrinsic.String.IsInString(V.Local.sMaterial, "CANVAS", True, V.Local.bCanvas)
+			F.Intrinsic.String.IsInString(V.Local.sMaterial, "STRETCHER", True, V.Local.bStretcher)
+			F.Intrinsic.String.IsInString(V.Local.sMaterial, "FRAME", True, V.Local.bFrame)
+			F.Intrinsic.Control.If(V.Local.bCanvas)
+				'(7+L) * (7+W)
+				F.Intrinsic.Math.Add(V.Local.fLength, 7, V.Local.fLengthTemp)
+				F.Intrinsic.Math.Add(V.Local.fWidth, 7, V.Local.fWidthTemp)
+				F.Intrinsic.Math.Mult(V.Local.fLengthTemp, V.Local.fWidthTemp, V.Local.fMaterialTemp)
+				F.Intrinsic.Math.Round(V.Local.fMaterialTemp, 4, V.Local.fMaterialTemp)
+			F.Intrinsic.Control.ElseIf(V.Local.bStretcher)
+				'perimeter
+				F.Intrinsic.Math.Add(V.Local.fLength, V.Local.fLength, V.Local.fWidth, V.Local.fWidth, V.Local.fMaterialTemp)
+				F.Intrinsic.Math.Round(V.Local.fMaterialTemp, 4, V.Local.fMaterialTemp)
+			F.Intrinsic.Control.ElseIf(V.Local.bFrame)
+				F.Intrinsic.String.IsInString(V.Local.sMaterial, "BLK", True, V.Local.bInString)
+				F.Intrinsic.Control.If(V.Local.bInString)
+					'area
+					F.Intrinsic.Math.Mult(V.Local.fLength, V.Local.fWidth, V.Local.fMaterialTemp)
+					F.Intrinsic.Math.Round(V.Local.fMaterialTemp, 4, V.Local.fMaterialTemp)
+				F.Intrinsic.Control.EndIf
+				
+				F.Intrinsic.String.IsInString(V.Local.sMaterial, "WIRE", True, V.Local.bInString)
+				F.Intrinsic.Control.If(V.Local.bInString)
+					'width
+					V.Local.fMaterialTemp.Set(V.Local.fWidth)
+				F.Intrinsic.Control.EndIf
+				
+			'this is the actual frame material
+			F.Intrinsic.Control.ElseIf(V.Local.sMaterial.Trim, =, 10873000)
+				'perimeter + 10%
+				F.Intrinsic.Math.Add(V.Local.fLength, V.Local.fLength, V.Local.fWidth, V.Local.fWidth, V.Local.fMaterialTemp)
+				F.Intrinsic.Math.Mult(V.Local.fMaterialTemp, 1.1, V.Local.fMaterialTemp)
+				F.Intrinsic.Math.Round(V.Local.fMaterialTemp, 4, V.Local.fMaterialTemp)
+				
+			F.Intrinsic.Control.Else
+				'(1/2+L) * (1/2+W)
+				F.Intrinsic.Math.Add(V.Local.fLength, 0.5, V.Local.fLengthTemp)
+				F.Intrinsic.Math.Add(V.Local.fWidth, 0.5, V.Local.fWidthTemp)
+				F.Intrinsic.Math.Mult(V.Local.fLengthTemp, V.Local.fWidthTemp, V.Local.fMaterialTemp)
+				F.Intrinsic.Math.Round(V.Local.fMaterialTemp, 4, V.Local.fMaterialTemp)
+			F.Intrinsic.Control.EndIf
+			
+			F.Data.DataTable.AddRow("6021", "RouterNum", V.Local.sPart, "RouterDesc", V.Local.sRouterDescription, "Seq", V.DataTable.dtRLines(V.Local.iCount).LINE_ROUTER!FieldValTrim, "LineType", "M", "PartNum", V.Local.sMaterial, "OperationCodeVend", V.DataTable.dtRLines(V.Local.iCount).OPERATION!FieldValTrim, "SetupQty", V.DataTable.dtRLines(V.Local.iCount).SET_UP!FieldValTrim, "RuntimeMatlQty", V.Local.fMaterialTemp, "RateUC", V.DataTable.dtRLines(V.Local.iCount).RATE!FieldValTrim, "UM", V.DataTable.dtRLines(V.Local.iCount).UM_INVENTORY!FieldValTrim, "PartStepDesc", V.DataTable.dtRLines(V.Local.iCount).DESC_RT_LINE!FieldValTrim, "Freq", V.DataTable.dtRLines(V.Local.iCount).FREQUENCY!FieldValTrim, "Overlap", V.DataTable.dtRLines(V.Local.iCount).OVERLAP!FieldValTrim, "WCFactor", V.DataTable.dtRLines(V.Local.iCount).WC_FACTOR!FieldValTrim, "LeadTime", V.DataTable.dtRLines(V.Local.iCount).LEAD_TIME!FieldValTrim)
+		
+		'F.Intrinsic.Control.Case("O")
+		
+		'F.Intrinsic.Control.Case("T")
+		
+	F.Intrinsic.Control.EndSelect
+F.Intrinsic.Control.Next(V.Local.iCount)
+
+F.Data.DataTable.Close("dtRLines")
+
+F.Intrinsic.Control.CallSub(6021Sync)
+F.Data.DataTable.AcceptChanges("6021")
+
+'add to list of created routers
+F.Intrinsic.String.Build("{0}*!*{1}",V.Global.sNewRouterList, V.Local.sPart, V.Global.sNewRouterList)
+Program.Sub.CopyRouter.End
+
+Program.Sub.GetRouterTemplateInfo.Start
+V.Local.sPart.Declare(String)
+V.Local.sPL.Declare(String)
+V.Local.sSizeField.Declare(String)
+V.Local.fLength.Declare(Float)
+V.Local.fWidth.Declare(Float)
+V.Local.sSize.Declare(String)
+V.Local.sFrame.Declare(String)
+V.Local.sPOLine.Declare(String)
+V.Local.iLine.Declare(Long)
+V.Local.sSelect.Declare(String)
+V.Local.sDescription.Declare(String)
+V.Local.bInString.Declare(Boolean)
+V.Local.sMedium.Declare(String)
+V.Local.sMediumTemp.Declare(String)
+V.Local.sTemplate.Declare(String)
+V.Local.sFrameTemp.Declare(String)
+V.Local.sMessage.Declare(String)
+
+'get template, call copy router with it
+'determine part number
+F.Intrinsic.String.GSSPartString(V.DataTable.ORDUPLLines(V.DataTable.ORDUPLLines.RowCount--).PartNumber!FieldValTrim, V.DataTable.ORDUPLLines(V.DataTable.ORDUPLLines.RowCount--).PartRev!FieldValTrim, V.Local.sPart)
+V.Local.sPL.Set(V.DataTable.ORDUPLLines(V.DataTable.ORDUPLLines.RowCount--).PL!FieldValTrim)
+
+'determine size
+'maybe should take size instead of description to avoid some of this
+'V.Local.sSizeField.Set(V.DataTable.ORDUPLLines(V.DataTable.ORDUPLLines.RowCount--).UserField1!FieldValTrim)
+'F.Intrinsic.String.Split(V.Local.sSizeField, ":", V.Local.sSizeField)
+'V.Local.sSize.Set(V.Local.sSizeField(1).Trim)
+V.Local.sSize.Set(V.DataTable.ORDUPLLines(V.DataTable.ORDUPLLines.RowCount--).UserField1!FieldValTrim)
+F.Intrinsic.String.Split(V.Local.sSize, "x", V.Local.sSize)
+V.Local.fLength.Set(V.Local.sSize(0))
+V.Local.fWidth.Set(V.Local.sSize(1))
+
+'determine frame
+V.Local.sFrame.Set("")
+V.Local.sPOLine.Set(V.Local.sPart)
+F.Intrinsic.String.Split(V.Local.sPart, "-", V.Local.sPOLine)
+'F.Intrinsic.Math.Sub(V.Local.sPOLine(1), 1, V.Local.iLine)
+V.Local.iLine.Set(V.Local.sPOLine(1))
+F.Intrinsic.String.Build("PO = '{0}' and Line = '{1}'", V.Local.sPOLine(0), V.Local.iLine, V.Local.sSelect)
+F.Data.DataTable.Select("Text", V.Local.sSelect, V.Local.sSelect)
+F.Intrinsic.Control.If(V.Local.sSelect.Trim, !=, "***NORETURN***")
+	'should only be one return...
+	V.Local.sDescription.Set(V.DataTable.Text(V.Local.sSelect).Text!FieldValTrim)
+	F.Intrinsic.String.IsInString(V.Local.sDescription, "Frame:", True, V.Local.bInString)
+	F.Intrinsic.Control.If(V.Local.bInString)
+		F.Intrinsic.String.Split(V.Local.sDescription, "Frame:", V.Local.sDescription)
+		V.Local.sFrame.Set(V.Local.sDescription(V.Local.sDescription.UBound))
+	F.Intrinsic.Control.EndIf
+F.Intrinsic.Control.EndIf
+
+'determine medium
+'will need to update this to account for zpearl and zmatte, but they don't have those templates set up yet
+V.Local.sMedium.Set(V.DataTable.ORDUPLLines(V.DataTable.ORDUPLLines.RowCount--).PartDesc!FieldValTrim)
+'		F.Intrinsic.String.IsInString(V.Local.sMedium, "Vinyl", "True", V.Local.bInString)
+'		F.Intrinsic.Control.If(V.Local.bInString)
+'			V.Local.sMedium.Set("FV")
+'		F.Intrinsic.Control.EndIf
+F.Intrinsic.String.IsInString(V.Local.sMedium, "Canvas", "True", V.Local.bInString)
+F.Intrinsic.Control.If(V.Local.bInString)
+	V.Local.sMediumTemp.Set("CANVAS")
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.String.IsInString(V.Local.sMedium, "Gloss Canvas", "True", V.Local.bInString)
+F.Intrinsic.Control.If(V.Local.bInString)
+	V.Local.sMediumTemp.Set("CANVAS GLOSS")
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.String.IsInString(V.Local.sMedium, "Matte Canvas", "True", V.Local.bInString)
+F.Intrinsic.Control.If(V.Local.bInString)
+	V.Local.sMediumTemp.Set("CANVAS MATTE")
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.String.IsInString(V.Local.sMedium, "Pearl Canvas", "True", V.Local.bInString)
+F.Intrinsic.Control.If(V.Local.bInString)
+	V.Local.sMediumTemp.Set("CANVAS PEARL")
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.String.IsInString(V.Local.sMedium, "Film", "True", V.Local.bInString)
+F.Intrinsic.Control.If(V.Local.bInString)
+	'V.Local.sMedium.Set("FILM")
+	V.Local.sMediumTemp.Set("PHOTO PRINTS")
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.String.IsInString(V.Local.sMedium, "Paper", "True", V.Local.bInString)
+F.Intrinsic.Control.If(V.Local.bInString)
+	V.Local.sMediumTemp.Set("ART PRINTS")
+	'V.Local.sMedium.Set("PAPER")
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.String.IsInString(V.Local.sMedium, "Aluminum", "True", V.Local.bInString)
+F.Intrinsic.Control.If(V.Local.bInString)
+	V.Local.sMediumTemp.Set("METAL")
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.String.IsInString(V.Local.sMedium, "Metal", "True", V.Local.bInString)
+F.Intrinsic.Control.If(V.Local.bInString)
+	V.Local.sMediumTemp.Set("METAL")
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.String.IsInString(V.Local.sMedium, "Acrylic", "True", V.Local.bInString)
+F.Intrinsic.Control.If(V.Local.bInString)
+	V.Local.sMediumTemp.Set("ACRYLIC")
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.String.IsInString(V.Local.sMedium, "Opticrylic", "True", V.Local.bInString)
+F.Intrinsic.Control.If(V.Local.bInString)
+	V.Local.sMediumTemp.Set("OPTICRYLIC")
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.If(V.Local.sFrame.Trim, !=, "")
+	V.Local.sFrameTemp.Set(" FRM")
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.If(V.Local.sMediumTemp.Trim, =, "")
+	F.Intrinsic.String.Build("Error: Template router not found for Medium '{0}'. No router will be created.", V.Local.sMedium, V.Local.sMessage)
+	F.Intrinsic.UI.Msgbox(V.Local.sMessage)
+	F.Intrinsic.Control.ExitSub
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.String.Build("Z{0}{1}", V.Local.sMediumTemp.Trim, V.Local.sFrameTemp, V.Local.sTemplate)
+
+V.Local.sDescription.Set(V.DataTable.ORDUPLLines(V.DataTable.ORDUPLLines.RowCount--).PartDesc!FieldValTrim)
+
+'now go actually make the router
+F.Intrinsic.Control.CallSub(CopyRouter, "Template", V.Local.sTemplate, "Part", V.Local.sPart.Trim, "Length", V.Local.fLength, "Width", V.Local.fWidth, "Description", V.Local.sDescription, "Frame", V.Local.sFrame)
+Program.Sub.GetRouterTemplateInfo.End
+
+Program.Sub.BackupFile.Start
+V.Local.sPath.Declare(String)
+V.Local.iRet.Declare(Long)
+V.Local.sFile.Declare(String)
+
+F.Intrinsic.String.Build("{0}\CUSTOM\4325\{1}\Processed", V.Caller.GlobalDir, V.Caller.CompanyCode, V.Local.sPath)
+F.Intrinsic.Control.CallSub(CheckDir, "Path", V.Local.sPath)
+
+'F.Intrinsic.String.Split(V.Args.File, "\", V.Local.sFile)
+F.Intrinsic.String.Build("{0}\Export_{1}{2}.json", V.Local.sPath, V.Ambient.Date.FormatYYYYMMDD, V.Ambient.Time.FormatHHNNSS, V.Local.sPath)
+F.Intrinsic.File.MoveFile(V.Args.File, V.Local.sPath, V.Local.iRet)
+Program.Sub.BackupFile.End
+
+Program.Sub.FailFile.Start
+V.Local.sPath.Declare(String)
+V.Local.iRet.Declare(Long)
+V.Local.sFile.Declare(String)
+
+F.Intrinsic.String.Build("{0}\CUSTOM\4325\{1}\Failed", V.Caller.GlobalDir, V.Caller.CompanyCode, V.Local.sPath)
+F.Intrinsic.Control.CallSub(CheckDir, "Path", V.Local.sPath)
+
+'F.Intrinsic.String.Split(V.Args.File, "\", V.Local.sFile)
+F.Intrinsic.String.Build("{0}\Export_{1}{2}.json", V.Local.sPath, V.Ambient.Date.FormatYYYYMMDD, V.Ambient.Time.FormatHHNNSS, V.Local.sPath)
+F.Intrinsic.File.MoveFile(V.Args.File, V.Local.sPath, V.Local.iRet)
+Program.Sub.FailFile.End
+
+Program.Sub.CheckDir.Start
+F.Intrinsic.Control.Try
+V.Local.sError.Declare
+
+'check if the given import directories exist
+'create them if they don't
+V.Local.sPath.Declare(String)
+V.Local.bExists.Declare(Boolean)
+
+V.Local.sPath.Set(V.Args.Path)
+F.Intrinsic.File.DirExists(V.Local.sPath, V.Local.bExists)
+F.Intrinsic.Control.If(V.Local.bExists.Not)
+	F.Intrinsic.File.CreateDir(V.Local.sPath)
+F.Intrinsic.Control.EndIf
+
+F.Intrinsic.Control.Catch
+	F.Intrinsic.String.Build("Project: {0}{1}{1}Subroutine: {2}{1}Error Occurred {3} with description {4}{1}{1}GAB Version: {5}",V.Ambient.ScriptPath,V.Ambient.Newline,V.Ambient.CurrentSubroutine,V.Ambient.ErrorNumber,V.Ambient.ErrorDescription,V.Ambient.GABVersion,V.Local.sError)
+	F.Intrinsic.UI.Msgbox(V.Local.sError)
+	F.Intrinsic.Control.End 
+F.Intrinsic.Control.EndTry
+Program.Sub.CheckDir.End
